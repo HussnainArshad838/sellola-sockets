@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
-const QuotationMessage = require('../Backend/models/QuotationMessage');
-const Quotation = require('../Backend/models/Quotation');
-const RFQ = require('../Backend/models/RFQ');
+// Models - using native MongoDB driver for most operations to avoid buffering issues
+// const QuotationMessage = require('../Backend/models/QuotationMessage'); // Not used - using native driver
+// const Quotation = require('../Backend/models/Quotation'); // Model not found - using native driver
+// const RFQ = require('../Backend/models/RFQ'); // Model not found - using native driver
 const Product = require('../Backend/models/Product');
 const User = require('../Backend/models/User');
 
@@ -38,6 +39,40 @@ const waitForDB = async (maxRetries = 15, delay = 1000) => {
   }
   console.error(`❌ [waitForDB] Max retries reached. DB not ready.`);
   return false;
+};
+
+// Helper function to get quotation using native MongoDB driver
+const getQuotation = async (quotationId) => {
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('Database not available');
+  }
+  try {
+    const ObjectId = mongoose.Types.ObjectId;
+    const quotationObjectId = quotationId instanceof ObjectId ? quotationId : new ObjectId(quotationId);
+    const quotation = await db.collection('quotations').findOne({ _id: quotationObjectId });
+    return quotation;
+  } catch (error) {
+    console.error(`❌ [getQuotation] Error fetching quotation ${quotationId}:`, error);
+    throw error;
+  }
+};
+
+// Helper function to get RFQ using native MongoDB driver
+const getRFQ = async (rfqId) => {
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('Database not available');
+  }
+  try {
+    const ObjectId = mongoose.Types.ObjectId;
+    const rfqObjectId = rfqId instanceof ObjectId ? rfqId : new ObjectId(rfqId);
+    const rfq = await db.collection('rfqs').findOne({ _id: rfqObjectId });
+    return rfq;
+  } catch (error) {
+    console.error(`❌ [getRFQ] Error fetching RFQ ${rfqId}:`, error);
+    throw error;
+  }
 };
 
 // Helper function to get product with shop using native MongoDB driver (bypasses Mongoose buffering)
@@ -202,15 +237,18 @@ module.exports = (io, socket) => {
       }
 
       // Verify user has access to this quotation
-      const quotation = await Quotation.findById(quotationId).populate('rfq');
+      const quotation = await getQuotation(quotationId);
       if (!quotation) {
         socket.emit('error', { message: 'Quotation not found' });
         return;
       }
 
-      const rfq = await RFQ.findById(quotation.rfq);
-      if (quotation.quotedBy.toString() !== socket.userId && 
-          rfq.requestedBy.toString() !== socket.userId) {
+      const rfq = quotation.rfq ? await getRFQ(quotation.rfq) : null;
+      const quotationQuotedBy = quotation.quotedBy?.toString() || quotation.quotedBy;
+      const rfqRequestedBy = rfq?.requestedBy?.toString() || rfq?.requestedBy;
+      
+      if (quotationQuotedBy !== socket.userId && 
+          rfqRequestedBy !== socket.userId) {
         socket.emit('error', { message: 'Access denied' });
         return;
       }
@@ -248,13 +286,14 @@ module.exports = (io, socket) => {
       }
 
       // Verify user has access to this RFQ
-      const rfq = await RFQ.findById(rfqId);
+      const rfq = await getRFQ(rfqId);
       if (!rfq) {
         socket.emit('error', { message: 'RFQ not found' });
         return;
       }
 
-      if (rfq.requestedBy.toString() !== socket.userId) {
+      const rfqRequestedBy = rfq.requestedBy?.toString() || rfq.requestedBy;
+      if (rfqRequestedBy !== socket.userId) {
         socket.emit('error', { message: 'Access denied' });
         return;
       }
@@ -412,29 +451,33 @@ module.exports = (io, socket) => {
       // Verify access and save message
       let room;
       if (quotationId) {
-        const quotation = await Quotation.findById(quotationId).populate('rfq');
+        const quotation = await getQuotation(quotationId);
         if (!quotation) {
           socket.emit('error', { message: 'Quotation not found' });
           return;
         }
-        const rfq = await RFQ.findById(quotation.rfq);
-        if (quotation.quotedBy.toString() !== socket.userId && 
-            rfq.requestedBy.toString() !== socket.userId) {
+        const rfq = quotation.rfq ? await getRFQ(quotation.rfq) : null;
+        const quotationQuotedBy = quotation.quotedBy?.toString() || quotation.quotedBy;
+        const rfqRequestedBy = rfq?.requestedBy?.toString() || rfq?.requestedBy;
+        
+        if (quotationQuotedBy !== socket.userId && 
+            rfqRequestedBy !== socket.userId) {
           socket.emit('error', { message: 'Access denied' });
           return;
         }
-        if (receiver !== quotation.quotedBy.toString() && receiver !== rfq.requestedBy.toString()) {
+        if (receiver !== quotationQuotedBy && receiver !== rfqRequestedBy) {
           socket.emit('error', { message: 'Invalid receiver' });
           return;
         }
         room = `quotation-${quotationId}`;
       } else if (rfqId) {
-        const rfq = await RFQ.findById(rfqId);
+        const rfq = await getRFQ(rfqId);
         if (!rfq) {
           socket.emit('error', { message: 'RFQ not found' });
           return;
         }
-        if (rfq.requestedBy.toString() !== socket.userId) {
+        const rfqRequestedBy = rfq.requestedBy?.toString() || rfq.requestedBy;
+        if (rfqRequestedBy !== socket.userId) {
           socket.emit('error', { message: 'Access denied' });
           return;
         }

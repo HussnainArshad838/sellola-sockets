@@ -29,17 +29,47 @@ if (!MONGODB_URI || !JWT_SECRET) {
 const app = express();
 const server = http.createServer(app);
 
-// CORS configuration
+// CORS configuration - parse comma-separated origins
+const corsOrigins = process.env.CORS_ORIGIN 
+  ? (process.env.CORS_ORIGIN === '*' 
+      ? '*' 
+      : process.env.CORS_ORIGIN.split(',').map(o => o.trim()))
+  : '*';
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: corsOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   }
 });
 
-// Middleware
-app.use(cors());
+// Middleware - configure CORS for HTTP requests
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin
+    if (!origin) return callback(null, true);
+    
+    // Parse CORS_ORIGIN - can be comma-separated string or '*'
+    const allowedOrigins = process.env.CORS_ORIGIN === '*' 
+      ? ['*'] 
+      : (process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
+    
+    // If '*' is in allowed origins, allow all
+    if (allowedOrigins.includes('*')) {
+      return callback(null, true);
+    }
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Health check
