@@ -80,6 +80,136 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Comprehensive test endpoint
+app.get('/test', async (req, res) => {
+  try {
+    const dbState = mongoose.connection.readyState;
+    const dbStateText = {
+      0: 'disconnected',
+      1: 'connected',
+      2: 'connecting',
+      3: 'disconnecting'
+    }[dbState] || 'unknown';
+
+    // Get database info
+    let dbInfo = {
+      state: dbState,
+      stateText: dbStateText,
+      databaseName: 'Not connected',
+      host: 'Not connected',
+      port: 'Not connected'
+    };
+
+    if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
+      try {
+        // Test database connection with ping
+        await mongoose.connection.db.admin().ping();
+        
+        dbInfo = {
+          state: dbState,
+          stateText: dbStateText,
+          databaseName: mongoose.connection.db.databaseName || 'Unknown',
+          host: mongoose.connection.host || 'Unknown',
+          port: mongoose.connection.port || 'Unknown'
+        };
+
+        // Get collection counts
+        const collections = await mongoose.connection.db.listCollections().toArray();
+        const collectionCounts = {};
+        
+        for (const collection of collections.slice(0, 10)) { // Limit to first 10 collections
+          try {
+            const count = await mongoose.connection.db.collection(collection.name).countDocuments();
+            collectionCounts[collection.name] = count;
+          } catch (err) {
+            collectionCounts[collection.name] = 'Error: ' + err.message;
+          }
+        }
+
+        dbInfo.collections = collectionCounts;
+        dbInfo.totalCollections = collections.length;
+      } catch (error) {
+        dbInfo.error = error.message;
+      }
+    }
+
+    // Get environment info
+    const envInfo = {
+      nodeEnv: process.env.NODE_ENV || 'not set',
+      port: process.env.PORT || '3001',
+      corsOrigin: process.env.CORS_ORIGIN ? 
+        (process.env.CORS_ORIGIN.length > 100 ? 
+          process.env.CORS_ORIGIN.substring(0, 100) + '...' : 
+          process.env.CORS_ORIGIN) : 
+        'not set',
+      mongodbUri: process.env.MONGODB_URI ? 
+        process.env.MONGODB_URI.replace(/\/\/.*@/, '//***:***@') : 
+        'not set',
+      jwtSecret: process.env.JWT_SECRET ? 'set' : 'not set'
+    };
+
+    // Get server info
+    const serverInfo = {
+      uptime: Math.floor(process.uptime()),
+      uptimeFormatted: formatUptime(process.uptime()),
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB',
+        rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + ' MB'
+      },
+      nodeVersion: process.version,
+      platform: process.platform,
+      pid: process.pid
+    };
+
+    // Get socket.io info
+    const socketInfo = {
+      connected: dbConnected,
+      socketClients: io.engine.clientsCount || 0,
+      socketRooms: io.sockets.adapter.rooms ? io.sockets.adapter.rooms.size : 0
+    };
+
+    res.json({
+      success: true,
+      service: 'Sellola WebSocket Server',
+      timestamp: new Date().toISOString(),
+      status: {
+        overall: dbConnected && dbState === 1 ? 'healthy' : 'unhealthy',
+        database: dbState === 1 ? 'connected' : 'disconnected',
+        server: 'running'
+      },
+      database: dbInfo,
+      environment: envInfo,
+      server: serverInfo,
+      socket: socketInfo
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      service: 'Sellola WebSocket Server',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Helper function to format uptime
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+  
+  return parts.join(' ');
+}
+
 // Track DB connection state
 let dbConnected = false;
 
