@@ -1,10 +1,8 @@
 const mongoose = require('mongoose');
 // Models - using native MongoDB driver for most operations to avoid buffering issues
-// const QuotationMessage = require('../Backend/models/QuotationMessage'); // Not used - using native driver
-// const Quotation = require('../Backend/models/Quotation'); // Model not found - using native driver
-// const RFQ = require('../Backend/models/RFQ'); // Model not found - using native driver
-const Product = require('../Backend/models/Product');
-const User = require('../Backend/models/User');
+// Models are defined locally for standalone deployment
+const Product = require('./models/Product');
+const User = require('./models/User');
 
 // Helper to check if DB is connected and ready
 const isDBConnected = () => {

@@ -11,16 +11,15 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 let MONGODB_URI = process.env.MONGODB_URI;
 let JWT_SECRET = process.env.JWT_SECRET;
 
-if (!MONGODB_URI || !JWT_SECRET) {
-  try {
-    // Try to load from Backend config
-    const backendConfig = require('../Backend/config');
-    MONGODB_URI = MONGODB_URI || backendConfig.MONGODB_URI;
-    JWT_SECRET = JWT_SECRET || backendConfig.JWT_SECRET;
-    console.log('📦 Using Backend config for MongoDB and JWT');
-  } catch (error) {
-    console.warn('⚠️  Could not load Backend config, using .env only');
-  }
+// Ensure required environment variables are set
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI is required. Please set it in .env file');
+  process.exit(1);
+}
+
+if (!JWT_SECRET) {
+  console.error('❌ JWT_SECRET is required. Please set it in .env file');
+  process.exit(1);
 }
 
 // Don't load socketHandlers yet - wait for DB connection
@@ -90,7 +89,7 @@ const connectDB = async () => {
     const mongoUri = MONGODB_URI || process.env.MONGODB_URI;
     if (!mongoUri) {
       console.error('❌ MONGODB_URI is not set');
-      console.error('💡 Please create a .env file in SocketServer folder or ensure Backend/config.js has MONGODB_URI');
+      console.error('💡 Please create a .env file in SocketServer folder with MONGODB_URI and JWT_SECRET');
       process.exit(1);
     }
     
